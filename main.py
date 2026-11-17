@@ -86,13 +86,48 @@ def generate_report(url, status_code, security_score,
 # ==========================================
 
 # Website URL
-url = "https://example.com"
+
+# Get website URL from the user
+url = input("Enter website URL: ").strip()
+
+# Add HTTPS if protocol is missing
+if not url.startswith(("http://", "https://")):
+    url = "https://" + url
+
+# Parse the URL
+parsed_url = urlparse(url)
+
+# Validate URL
+if (
+    parsed_url.scheme not in ("http", "https")
+    or not parsed_url.hostname
+    or "." not in parsed_url.hostname
+    or " " in parsed_url.hostname
+):
+    print("Invalid URL. Please enter a valid website address.")
+    exit()
+
+print("Valid URL:", url)
+
 
 # Send HTTP GET request
-response = requests.get(url, timeout=10)
+try:
+    response = requests.get(url, timeout=10)
 
-print("Website:", url)
-print("Status Code:", response.status_code)
+    print("Website:", url)
+    print("Status Code:", response.status_code)
+
+except requests.exceptions.Timeout:
+    print("Error: Website connection timed out.")
+    exit()
+
+except requests.exceptions.ConnectionError:
+    print("Error: Unable to connect to the website.")
+    exit()
+
+except requests.exceptions.RequestException as e:
+    print("Request Error:", e)
+    exit()
 
 
 # ==========================================
@@ -131,6 +166,7 @@ for header in missing_headers:
     print("  Recommendation:", recommendations[header])
 
 
+
 # ==========================================
 # TLS CERTIFICATE INSPECTION
 # ==========================================
@@ -138,74 +174,103 @@ for header in missing_headers:
 print("\nTLS CERTIFICATE INSPECTION")
 print("-----------------------------")
 
+certificate_status = "NOT CHECKED"
+days_remaining = None
+
 hostname = urlparse(url).hostname
 
-context = ssl.create_default_context(cafile=certifi.where())
+try:
 
-with socket.create_connection((hostname, 443), timeout=10) as sock:
+    context = ssl.create_default_context(cafile=certifi.where())
 
-    with context.wrap_socket(sock, server_hostname=hostname) as secure_socket:
+    with socket.create_connection((hostname, 443), timeout=10) as sock:
 
-        certificate = secure_socket.getpeercert()
+        with context.wrap_socket(sock, server_hostname=hostname) as secure_socket:
 
-        print("Connected to:", hostname)
-        print("Certificate retrieved successfully!")
+            certificate = secure_socket.getpeercert()
 
-        subject = certificate.get("subject")
-        issuer = certificate.get("issuer")
+            print("Connected to:", hostname)
+            print("Certificate retrieved successfully!")
 
-        valid_from = certificate.get("notBefore")
-        valid_until = certificate.get("notAfter")
+            # Extract certificate information
+            subject = certificate.get("subject")
+            issuer = certificate.get("issuer")
 
-        valid_from_date = datetime.strptime(
-            valid_from, "%b %d %H:%M:%S %Y %Z"
-        ).replace(tzinfo=timezone.utc)
+            valid_from = certificate.get("notBefore")
+            valid_until = certificate.get("notAfter")
 
-        valid_until_date = datetime.strptime(
-            valid_until, "%b %d %H:%M:%S %Y %Z"
-        ).replace(tzinfo=timezone.utc)
+            # Convert dates into datetime objects
+            valid_from_date = datetime.strptime(
+                valid_from, "%b %d %H:%M:%S %Y %Z"
+            ).replace(tzinfo=timezone.utc)
 
-        current_time = datetime.now(timezone.utc)
+            valid_until_date = datetime.strptime(
+                valid_until, "%b %d %H:%M:%S %Y %Z"
+            ).replace(tzinfo=timezone.utc)
 
-        # Initialize report variables
-        days_remaining = None
+            current_time = datetime.now(timezone.utc)
 
-        print("\nCERTIFICATE VALIDITY")
-        print("-----------------------------")
+            # Check certificate validity
+            print("\nCERTIFICATE VALIDITY")
+            print("-----------------------------")
 
-        if current_time < valid_from_date:
-            certificate_status = "NOT YET VALID"
+            if current_time < valid_from_date:
+                certificate_status = "NOT YET VALID"
 
-        elif current_time > valid_until_date:
-            certificate_status = "EXPIRED"
-
-        else:
-            certificate_status = "VALID"
-
-        print("Status:", certificate_status)
-
-        print("\nCERTIFICATE DETAILS")
-        print("-----------------------------")
-
-        print("Subject:", subject)
-        print("Issuer:", issuer)
-        print("Valid From:", valid_from)
-        print("Valid Until:", valid_until)
-
-        if certificate_status == "VALID":
-
-            days_remaining = (valid_until_date - current_time).days
-
-            print("Days Remaining:", days_remaining)
-
-            if days_remaining <= 7:
-                print("WARNING: Certificate expires soon!")
-
-            elif days_remaining <= 30:
-                print("NOTICE: Certificate expires within 30 days.")
+            elif current_time > valid_until_date:
+                certificate_status = "EXPIRED"
 
             else:
-                print("Certificate expiry is not approaching.")
+                certificate_status = "VALID"
+
+            print("Status:", certificate_status)
+
+            # Display certificate details
+            print("\nCERTIFICATE DETAILS")
+            print("-----------------------------")
+
+            print("Subject:", subject)
+            print("Issuer:", issuer)
+            print("Valid From:", valid_from)
+            print("Valid Until:", valid_until)
+
+            # Calculate remaining days
+            if certificate_status == "VALID":
+
+                days_remaining = (valid_until_date - current_time).days
+
+                print("Days Remaining:", days_remaining)
+
+                if days_remaining <= 7:
+                    print("WARNING: Certificate expires soon!")
+
+                elif days_remaining <= 30:
+                    print("NOTICE: Certificate expires within 30 days.")
+
+                else:
+                    print("Certificate expiry is not approaching.")
+
+
+except ssl.SSLCertVerificationError:
+
+    certificate_status = "CERTIFICATE VERIFICATION FAILED"
+    print("TLS Error: Certificate verification failed.")
+
+except socket.timeout:
+
+    certificate_status = "CONNECTION TIMEOUT"
+    print("TLS Error: Connection timed out.")
+
+except ssl.SSLError:
+
+    certificate_status = "TLS ERROR"
+    print("TLS Error: Secure connection could not be established.")
+
+except OSError as e:
+
+    certificate_status = "CONNECTION ERROR"
+    print("TLS Connection Error:", e)
+
 
 
 # ==========================================
