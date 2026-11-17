@@ -1,3 +1,4 @@
+
 import requests
 import ssl
 import socket
@@ -7,58 +8,103 @@ from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 
+# ==========================================
+# FUNCTION 1: SECURITY HEADER AUDIT
+# ==========================================
+
+def check_security_headers(response):
+
+    security_headers = [
+        "Content-Security-Policy",
+        "Strict-Transport-Security",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy"
+    ]
+
+    present_count = 0
+    missing_headers = []
+
+    print("\nSECURITY HEADER AUDIT")
+    print("-----------------------------")
+
+    for header in security_headers:
+
+        if header in response.headers:
+            print(header, ": PRESENT")
+            present_count += 1
+
+        else:
+            print(header, ": MISSING")
+            missing_headers.append(header)
+
+    total_headers = len(security_headers)
+    security_score = (present_count / total_headers) * 100
+
+    print("\nSECURITY SCORE")
+    print("-----------------------------")
+    print("Headers Present:", present_count, "/", total_headers)
+    print("Security Score:", security_score, "%")
+
+    return missing_headers, security_score
+
+
+# ==========================================
+# FUNCTION 2: FINAL SECURITY AUDIT REPORT
+# ==========================================
+
+def generate_report(url, status_code, security_score,
+                    missing_headers, certificate_status,
+                    days_remaining):
+
+    print("\n======================================")
+    print("       FINAL SECURITY AUDIT REPORT")
+    print("======================================")
+
+    print("Website:", url)
+    print("HTTP Status Code:", status_code)
+
+    print("\nSECURITY HEADER SUMMARY")
+    print("-----------------------------")
+    print("Security Score:", security_score, "%")
+    print("Missing Headers:", len(missing_headers))
+
+    print("\nTLS CERTIFICATE SUMMARY")
+    print("-----------------------------")
+    print("Certificate Status:", certificate_status)
+
+    if days_remaining is not None:
+        print("Days Remaining:", days_remaining)
+    else:
+        print("Days Remaining: Not applicable")
+
+    print("======================================")
+
+
+# ==========================================
+# MAIN PROGRAM
+# ==========================================
+
 # Website URL
 url = "https://example.com"
 
 # Send HTTP GET request
 response = requests.get(url, timeout=10)
 
-# Display response status
 print("Website:", url)
 print("Status Code:", response.status_code)
 
-# Display HTTP response headers
-print("\nHTTP RESPONSE HEADERS")
-print("-----------------------------")
 
-for header, value in response.headers.items():
-    print(header, ":", value)
+# ==========================================
+# SECURITY HEADER AUDIT
+# ==========================================
 
-
-
-# List of important security headers
-security_headers = [
-    "Content-Security-Policy",
-    "Strict-Transport-Security",
-    "X-Frame-Options",
-    "X-Content-Type-Options",
-    "Referrer-Policy"
-]
-
-# Initialize the counter
-present_count = 0
-
-print("\nSECURITY HEADER AUDIT")
-print("-----------------------------")
-
-for header in security_headers:
-    if header in response.headers:
-        print(header, ": PRESENT")
-        present_count += 1
-    else:
-        print(header, ": MISSING")
-
-# Calculate security score
-total_headers = len(security_headers)
-security_score = (present_count / total_headers) * 100
-
-print("\nSECURITY SCORE")
-print("-----------------------------")
-print("Headers Present:", present_count, "/", total_headers)
-print("Security Score:", security_score, "%")
+missing_headers, security_score = check_security_headers(response)
 
 
+# ==========================================
 # SECURITY RECOMMENDATIONS
+# ==========================================
 
 print("\nSECURITY RECOMMENDATIONS")
 print("-----------------------------")
@@ -80,50 +126,37 @@ recommendations = {
         "Configure an appropriate Referrer Policy to control referrer information."
 }
 
-for header, recommendation in recommendations.items():
-
-    if header not in response.headers:
-        print("-", header)
-        print("  Recommendation:", recommendation)
+for header in missing_headers:
+    print("-", header)
+    print("  Recommendation:", recommendations[header])
 
 
+# ==========================================
 # TLS CERTIFICATE INSPECTION
+# ==========================================
 
 print("\nTLS CERTIFICATE INSPECTION")
 print("-----------------------------")
 
-# Extract hostname from the website URL
 hostname = urlparse(url).hostname
-
-# Create a secure SSL context
 
 context = ssl.create_default_context(cafile=certifi.where())
 
-# Connect to the website
 with socket.create_connection((hostname, 443), timeout=10) as sock:
 
-    # Establish a secure TLS connection
     with context.wrap_socket(sock, server_hostname=hostname) as secure_socket:
 
-        # Retrieve the website's certificate
         certificate = secure_socket.getpeercert()
-        
 
         print("Connected to:", hostname)
         print("Certificate retrieved successfully!")
 
-
-        # Extract certificate subject
         subject = certificate.get("subject")
-
-        # Extract certificate issuer
         issuer = certificate.get("issuer")
 
-        # Extract validity dates
         valid_from = certificate.get("notBefore")
         valid_until = certificate.get("notAfter")
 
-        # Convert certificate dates into datetime objects
         valid_from_date = datetime.strptime(
             valid_from, "%b %d %H:%M:%S %Y %Z"
         ).replace(tzinfo=timezone.utc)
@@ -132,24 +165,25 @@ with socket.create_connection((hostname, 443), timeout=10) as sock:
             valid_until, "%b %d %H:%M:%S %Y %Z"
         ).replace(tzinfo=timezone.utc)
 
-        # Get the current UTC time
         current_time = datetime.now(timezone.utc)
 
-        # Check certificate validity
+        # Initialize report variables
+        days_remaining = None
+
         print("\nCERTIFICATE VALIDITY")
         print("-----------------------------")
 
         if current_time < valid_from_date:
-            print("Status: NOT YET VALID")
+            certificate_status = "NOT YET VALID"
 
         elif current_time > valid_until_date:
-            print("Status: EXPIRED")
+            certificate_status = "EXPIRED"
 
         else:
-            print("Status: VALID")
+            certificate_status = "VALID"
 
+        print("Status:", certificate_status)
 
-        # Display certificate information
         print("\nCERTIFICATE DETAILS")
         print("-----------------------------")
 
@@ -158,21 +192,31 @@ with socket.create_connection((hostname, 443), timeout=10) as sock:
         print("Valid From:", valid_from)
         print("Valid Until:", valid_until)
 
+        if certificate_status == "VALID":
 
-        # Calculate remaining certificate validity
-        if current_time <= valid_until_date:
+            days_remaining = (valid_until_date - current_time).days
 
-            remaining_days = (valid_until_date - current_time).days
+            print("Days Remaining:", days_remaining)
 
-            print("Days Remaining:", remaining_days)
-
-            if remaining_days <= 7:
+            if days_remaining <= 7:
                 print("WARNING: Certificate expires soon!")
 
-            elif remaining_days <= 30:
+            elif days_remaining <= 30:
                 print("NOTICE: Certificate expires within 30 days.")
 
             else:
                 print("Certificate expiry is not approaching.")
 
 
+# ==========================================
+# GENERATE FINAL REPORT
+# ==========================================
+
+generate_report(
+    url,
+    response.status_code,
+    security_score,
+    missing_headers,
+    certificate_status,
+    days_remaining
+)
