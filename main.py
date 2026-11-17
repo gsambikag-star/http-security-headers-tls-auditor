@@ -58,6 +58,35 @@ print("Headers Present:", present_count, "/", total_headers)
 print("Security Score:", security_score, "%")
 
 
+# SECURITY RECOMMENDATIONS
+
+print("\nSECURITY RECOMMENDATIONS")
+print("-----------------------------")
+
+recommendations = {
+    "Content-Security-Policy":
+        "Configure a suitable Content Security Policy to help prevent XSS attacks.",
+
+    "Strict-Transport-Security":
+        "Enable HSTS to ensure browsers use HTTPS.",
+
+    "X-Frame-Options":
+        "Configure frame restrictions to help prevent clickjacking.",
+
+    "X-Content-Type-Options":
+        "Set this header to nosniff to prevent MIME-type sniffing.",
+
+    "Referrer-Policy":
+        "Configure an appropriate Referrer Policy to control referrer information."
+}
+
+for header, recommendation in recommendations.items():
+
+    if header not in response.headers:
+        print("-", header)
+        print("  Recommendation:", recommendation)
+
+
 # TLS CERTIFICATE INSPECTION
 
 print("\nTLS CERTIFICATE INSPECTION")
